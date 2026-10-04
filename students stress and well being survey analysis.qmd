@@ -1,0 +1,710 @@
+---
+title: "Students Stress and Well Being Survey Analysis"
+format: 
+  docx:
+     toc: true
+     toc-depth: 1
+     number-sections: true
+     highlight-style: github
+     fig-align: center
+     tbl-cap-location: top
+---
+
+```{r setup, include=FALSE}
+
+library(dplyr)
+library(dslabs)
+library(tidyverse)
+library(gtsummary)
+library(flextable)
+library(knitr)
+library(kableExtra)
+library(psych)
+library(car)
+library(ggfortify)
+library(broom)
+library(skimr)
+library(scales)
+library(rstatix)
+library(ggpubr)
+library(report)
+library(janitor)
+library(psych)
+library(GPArotation)
+
+
+# data <- read.csv("Stress Dataset.csv",stringsAsFactors = TRUE)
+
+data <- RKaggle::get_dataset("ashutoshsingh22102/stress-and-well-being-data-of-college-students")
+
+# str(data)
+
+#replace blanks with NA
+data[data == ""] <- NA
+
+#recode gender for interpretability
+data <- data %>% mutate(gender_recode = case_when(
+  Gender==1 ~ "Female", 
+  Gender==0 ~ "Male") ) 
+
+#check if it is a factor
+data$gender_recode <- as.factor(data$gender_recode)
+
+#check which factors to use
+summary(data$Age)
+
+#recode age into a categorical variable
+data <- data %>% mutate(age_category = case_when(
+  Age <= 19 & Age >=10 ~ "10-19 years", 
+  Age <= 29 & Age >=20 ~ "20-29 years",
+  Age <= 39 & Age >=30 ~ "30-39 years", 
+  Age <= 49 & Age >=40 ~ "40-49 years",
+  Age <= 59 & Age >=50 ~ "50-59 years", 
+  Age <= 69 & Age >=60 ~ "60-69 years",
+  Age <= 79 & Age >=70 ~ "70-79 years", 
+  Age <= 89 & Age >=80 ~ "80-89 years",
+  Age <= 99 & Age >=90 ~ "90-99 years", 
+  Age <= 109 & Age >=100 ~ "100-109 years") ) 
+
+#ensure it is a factor
+data$age_category <- as.factor(data$age_category)
+
+levels(data$`Which type of stress do you primarily experience?`)
+
+data$`Which type of stress do you primarily experience?`
+# recode stress variable for readability
+data <- data %>% mutate(stress_type = case_when(
+  `Which type of stress do you primarily experience?` ==  "Distress (Negative Stress) - Stress that causes anxiety and impairs well-being." ~ "Negative Stress", 
+  `Which type of stress do you primarily experience?` ==  "Eustress (Positive Stress) - Stress that motivates and enhances performance." ~ "Positive Stress",
+  `Which type of stress do you primarily experience?` ==  "No Stress - Currently experiencing minimal to no stress." ~ "No Stress") ) 
+
+
+# data quality
+# skim(data)
+
+#clean names
+data_clean <- clean_names(data)
+
+```
+
+
+# Results
+
+The dataset was downloaded from Kaggle (1) using the url:
+https://www.kaggle.com/datasets/ashutoshsingh22102/stress-and-well-being-data-of-college-students/data
+
+
+
+# Table 1 – Demographic characteristics of survey respondents
+
+```{r, echo=FALSE, warning=FALSE}
+
+data_clean %>% tbl_summary(by=stress_type,
+                     include = c(gender_recode, age, age_category),
+    type = list(all_continuous() ~ "continuous2"),
+digits = list(all_categorical()~c(0,1) , 
+                all_continuous()~1) ,
+    statistic = list(all_continuous() ~ c( "{mean} ({sd})") ) ,
+    missing = "ifany",
+    missing_text = "Unknown",
+    missing_stat = "{N_miss} ({p_miss}%)") %>%
+  bold_labels() %>%
+   remove_row_type(type =  "level",level_value = "") %>% 
+  as_flex_table() %>% 
+   flextable::set_table_properties(width=1,layout="autofit", 
+                       opts_word = list(repeat_headers=TRUE,
+                                        keep_with_next=TRUE)) %>% 
+   flextable::font(fontname="Times New Roman", part="all") %>% 
+   flextable::line_spacing(space=1, part="all")
+  
+
+```
+
+
+# Table 2 – Likert Scale Characteristics of respondents
+
+```{r, echo=FALSE, warning=FALSE}
+
+all <- data_clean %>% 
+  dplyr::select(have_you_recently_experienced_stress_in_your_life,
+                have_you_noticed_a_rapid_heartbeat_or_palpitations,
+                have_you_been_dealing_with_anxiety_or_tension_recently,
+                do_you_face_any_sleep_problems_or_difficulties_falling_asleep,
+                have_you_been_dealing_with_anxiety_or_tension_recently_1,
+                have_you_been_getting_headaches_more_often_than_usual,
+                do_you_get_irritated_easily,
+                do_you_have_trouble_concentrating_on_your_academic_tasks,
+                have_you_been_feeling_sadness_or_low_mood,
+                have_you_been_experiencing_any_illness_or_health_issues,
+                do_you_often_feel_lonely_or_isolated,
+                do_you_feel_overwhelmed_with_your_academic_workload,
+                are_you_in_competition_with_your_peers_and_does_it_affect_you,
+                do_you_find_that_your_relationship_often_causes_you_stress,
+                are_you_facing_any_difficulties_with_your_professors_or_instructors,
+                is_your_working_environment_unpleasant_or_stressful,
+                do_you_struggle_to_find_time_for_relaxation_and_leisure_activities,
+                is_your_hostel_or_home_environment_causing_you_difficulties,
+                do_you_lack_confidence_in_your_academic_performance,
+                do_you_lack_confidence_in_your_choice_of_academic_subjects,
+                academic_and_extracurricular_activities_conflicting_for_you,
+                do_you_attend_classes_regularly,
+                have_you_gained_lost_weight
+                )
+
+
+all_numeric <- as.data.frame(lapply(all, function(x) as.numeric(as.character(x))))
+
+all_numeric %>%
+  mutate(across(
+    everything(), # Applies to all columns
+    ~ factor(
+      .x,
+      levels = c(1, 2, 3, 4, 5),
+      labels = c("Not at all","Slightly","Moderately","Very","Extremely"),
+      ordered = TRUE
+    )
+  )) %>% pivot_longer(
+    cols = everything(), 
+    names_to = "Likert Item", 
+    values_to = "Response")  %>%
+  mutate(`Likert Item` = factor(`Likert Item`, levels = unique(`Likert Item`))) %>%
+  tbl_cross(
+    row = `Likert Item`,
+    col = Response,
+    percent = "row", 
+    margin = NULL) %>%
+  bold_labels() %>% 
+  as_flex_table() %>%
+  # Apply Times New Roman to the entire table (body and header)
+   flextable::set_table_properties(width=1,layout="autofit", 
+                       opts_word = list(repeat_headers=TRUE,
+                                        keep_with_next=TRUE)) %>% 
+   flextable::font(fontname="Times New Roman", part="all") %>% 
+   flextable::line_spacing(space=1, part="all")
+
+```
+
+
+# Table 3 - Characteristics of all Respondents. 
+
+A stress score was created based on all questions. The overall reliability was found to be 0.7, which is acceptable by standard convention. 
+
+```{r, echo=FALSE, warning=FALSE}
+
+score <- data_clean %>% dplyr::select(have_you_recently_experienced_stress_in_your_life,
+                have_you_noticed_a_rapid_heartbeat_or_palpitations,
+                have_you_been_dealing_with_anxiety_or_tension_recently,
+                do_you_face_any_sleep_problems_or_difficulties_falling_asleep,
+                have_you_been_dealing_with_anxiety_or_tension_recently_1,
+                have_you_been_getting_headaches_more_often_than_usual,
+                do_you_get_irritated_easily,
+                do_you_have_trouble_concentrating_on_your_academic_tasks,
+                have_you_been_feeling_sadness_or_low_mood,
+                have_you_been_experiencing_any_illness_or_health_issues,
+                do_you_often_feel_lonely_or_isolated,
+                do_you_feel_overwhelmed_with_your_academic_workload,
+                are_you_in_competition_with_your_peers_and_does_it_affect_you,
+                do_you_find_that_your_relationship_often_causes_you_stress,
+                are_you_facing_any_difficulties_with_your_professors_or_instructors,
+                is_your_working_environment_unpleasant_or_stressful,
+                do_you_struggle_to_find_time_for_relaxation_and_leisure_activities,
+                is_your_hostel_or_home_environment_causing_you_difficulties,
+                do_you_lack_confidence_in_your_academic_performance,
+                do_you_lack_confidence_in_your_choice_of_academic_subjects,
+                academic_and_extracurricular_activities_conflicting_for_you,
+                do_you_attend_classes_regularly,
+                have_you_gained_lost_weight) %>% rowSums(na.rm=TRUE) 
+
+
+data_clean2 <- data_clean %>% mutate(score = score)
+
+data_clean2_subset <- data_clean2 %>% select(-c(age, gender, gender_recode, age_category, which_type_of_stress_do_you_primarily_experience, stress_type))
+
+
+all_stats_df <- psych::alpha(data_clean2_subset)$total %>% t() %>% signif(digits=3) %>% as.data.frame()
+
+all_stats_df <- cbind(Variable = rownames(all_stats_df), all_stats_df) 
+
+
+flextable(all_stats_df)  %>% 
+   flextable::set_table_properties(width=1,layout="autofit", 
+                       opts_word = list(repeat_headers=TRUE,
+                                        keep_with_next=TRUE)) %>% 
+  flextable::font(fontname="Times New Roman", part="all") %>% colformat_double(digits = 2) 
+
+
+
+
+
+all_item_stats_df <- psych::alpha(data_clean2_subset)$item.stats %>%  signif(digits=3) %>% as.data.frame()
+
+  
+all_item_stats_df <- cbind(Variable = rownames(all_item_stats_df), all_item_stats_df) 
+
+
+flextable(all_item_stats_df)  %>% 
+   flextable::set_table_properties(width=1,layout="autofit", 
+                       opts_word = list(repeat_headers=TRUE,
+                                        keep_with_next=TRUE)) %>% 
+  flextable::font(fontname="Times New Roman", part="all") %>% colformat_double(digits = 2) 
+
+
+
+```
+
+# Pre defined factors 
+
+The reliability of the groups of indicators, stated in another study (5) were assessed. These included: 
+- Emotional and Stress Indicators
+- Physical and Health Indicators
+- Academic & Environment Stressors
+- Social & Relationship Factors
+
+
+```{r, echo=FALSE, warning=FALSE}
+
+emotional_stress <- data_clean2[,c("have_you_recently_experienced_stress_in_your_life",
+                "have_you_noticed_a_rapid_heartbeat_or_palpitations",
+                "have_you_been_dealing_with_anxiety_or_tension_recently",
+                "do_you_face_any_sleep_problems_or_difficulties_falling_asleep",
+                "do_you_have_trouble_concentrating_on_your_academic_tasks",
+                "have_you_been_feeling_sadness_or_low_mood",
+                "do_you_get_irritated_easily",
+                "do_you_often_feel_lonely_or_isolated")]
+
+# psych::alpha(emotional_stress) #0.5379649
+
+
+physical_health <- data_clean2[, c(
+                "have_you_been_getting_headaches_more_often_than_usual",
+                "have_you_been_experiencing_any_illness_or_health_issues",
+                "have_you_gained_lost_weight")]
+
+# psych::alpha(physical_health) #	0.225059
+
+
+academic_environment <- data_clean2[, c(
+                "do_you_feel_overwhelmed_with_your_academic_workload",
+                "are_you_in_competition_with_your_peers_and_does_it_affect_you",
+                "do_you_lack_confidence_in_your_academic_performance",
+                 "do_you_lack_confidence_in_your_choice_of_academic_subjects",
+                "academic_and_extracurricular_activities_conflicting_for_you",
+                "do_you_attend_classes_regularly",
+                "are_you_facing_any_difficulties_with_your_professors_or_instructors",
+                "is_your_working_environment_unpleasant_or_stressful",
+                "is_your_hostel_or_home_environment_causing_you_difficulties")]
+
+# psych::alpha(academic_environment ) #0.5934446	
+
+social_relationships <- data_clean2[, c(
+                "do_you_find_that_your_relationship_often_causes_you_stress",
+                "do_you_struggle_to_find_time_for_relaxation_and_leisure_activities" )]
+
+# psych::alpha(social_relationships ) #0.2215781
+
+
+alphas <- rbind(psych::alpha(emotional_stress)$total[1],
+      psych::alpha(physical_health)$total[1],
+      psych::alpha(academic_environment)$total[1],
+      psych::alpha(social_relationships)$total[1])
+
+
+factors <- rbind("emotional_stress","physical_health","academic_environment",
+                 "social_relationships")
+
+alpha1 <- cbind(factors = factors, alpha = round(alphas,2))  
+rownames(alpha1) <- c("1","2","3","4")
+alpha1 %>% flextable()
+
+
+
+```
+
+Some of the categories, have low reliability, less than 0.7.
+
+
+# Factor Analysis
+
+Factor Analysis was then used to see if there were other subscales / groups of questions corresponding to themes. 
+
+```{r, echo=FALSE, warning=FALSE}
+
+
+
+fa_data <- data_clean2[, c("have_you_recently_experienced_stress_in_your_life",
+                "have_you_noticed_a_rapid_heartbeat_or_palpitations",
+                "have_you_been_dealing_with_anxiety_or_tension_recently",
+                "do_you_face_any_sleep_problems_or_difficulties_falling_asleep",
+                "have_you_been_dealing_with_anxiety_or_tension_recently_1",
+                "have_you_been_getting_headaches_more_often_than_usual",
+                "do_you_get_irritated_easily",
+                "do_you_have_trouble_concentrating_on_your_academic_tasks",
+                "have_you_been_feeling_sadness_or_low_mood",
+                "have_you_been_experiencing_any_illness_or_health_issues",
+                "do_you_often_feel_lonely_or_isolated",
+                "do_you_feel_overwhelmed_with_your_academic_workload",
+                "are_you_in_competition_with_your_peers_and_does_it_affect_you",
+                "do_you_find_that_your_relationship_often_causes_you_stress",
+                "are_you_facing_any_difficulties_with_your_professors_or_instructors",
+                "is_your_working_environment_unpleasant_or_stressful",
+                "do_you_struggle_to_find_time_for_relaxation_and_leisure_activities",
+                "is_your_hostel_or_home_environment_causing_you_difficulties",
+                "do_you_lack_confidence_in_your_academic_performance",
+                "do_you_lack_confidence_in_your_choice_of_academic_subjects",
+                "academic_and_extracurricular_activities_conflicting_for_you",
+                "do_you_attend_classes_regularly",
+                "have_you_gained_lost_weight")]
+
+
+fa_data  <- as.data.frame(lapply(fa_data , function(x) as.numeric(as.character(x)))) 
+
+# Remove rows with missing data (none)
+fa_data <- na.omit(fa_data) 
+
+ev <- eigen(cor(fa_data)) # get eigenvalues
+# ev$values
+
+# scree(fa_data, pc=FALSE) #gives approx 3 factors 
+
+
+#factor analysis assumptions
+
+#Kaiser-Meyer-Olkin (KMO) Measure of Sampling Adequacy
+KMO(fa_data) #Overall MSA =  0.71
+
+# cor(fa_data)
+
+# Bartlett's Test of Sphericity
+cortest.bartlett(fa_data)$p.value 
+# p=0 means items are significantly correlated).
+
+
+#how many factors
+# run parallel analysis
+parallel <- fa.parallel(fa_data, fm = "pa", fa = "fa")
+
+#Parallel analysis suggests that the number of factors =  6  and the number of components =  NA 
+
+# assuming constructs do not overlap on one another - varimax
+fa_model <- fa(fa_data, nfactors = 6, fm = "pa", rotate = "varimax")
+
+# Print the results clearly, hiding weak loadings under 0.30
+print(fa_model, cut = 0.30, sort = TRUE) 
+
+
+loads <- fa_model$loadings
+
+fa.diagram(loads)
+
+capture.output(print(print(fa_model, cut = 0.30, sort = TRUE, digits=2))) %>% writeLines( "factor_analysis_output.txt")
+
+# dim(fa_model$loadings)
+
+factorloadings <- round(round(fa_model$loadings[ 1:23,], 6), 2)
+
+write.csv(factorloadings, file="factor_loadings.csv")
+
+# factorloadings %>% kable()
+
+```
+
+
+# Reevaluate Reliability - cross check
+
+```{r, echo=FALSE, warning=FALSE}
+
+environment <- fa_data[ , c( "is_your_working_environment_unpleasant_or_stressful",
+ "are_you_facing_any_difficulties_with_your_professors_or_instructors",
+ "are_you_in_competition_with_your_peers_and_does_it_affect_you",
+ "do_you_feel_overwhelmed_with_your_academic_workload",
+ "do_you_often_feel_lonely_or_isolated",
+ "do_you_struggle_to_find_time_for_relaxation_and_leisure_activities",
+ "do_you_find_that_your_relationship_often_causes_you_stress"
+
+)]
+
+
+depression <- fa_data[ , c( "do_you_have_trouble_concentrating_on_your_academic_tasks",
+ "have_you_been_feeling_sadness_or_low_mood",
+ "do_you_get_irritated_easily",
+ "have_you_been_getting_headaches_more_often_than_usual",
+ "have_you_been_experiencing_any_illness_or_health_issues"
+
+)]
+
+
+anxiety <- fa_data[ , c( "have_you_noticed_a_rapid_heartbeat_or_palpitations",
+ "have_you_recently_experienced_stress_in_your_life",
+ "have_you_been_dealing_with_anxiety_or_tension_recently"
+)]
+
+
+# have_you_been_getting_headaches_more_often_than_usual
+sleep <- fa_data[ , c( "have_you_been_dealing_with_anxiety_or_tension_recently_1",
+ "do_you_face_any_sleep_problems_or_difficulties_falling_asleep"
+
+)]
+
+academic <- fa_data[ , c( "academic_and_extracurricular_activities_conflicting_for_you",
+ "do_you_lack_confidence_in_your_choice_of_academic_subjects"
+
+)]
+
+
+confidence <- fa_data[ , c( "do_you_lack_confidence_in_your_academic_performance",
+ "is_your_hostel_or_home_environment_causing_you_difficulties"
+
+)]
+
+
+alphas2 <- rbind(psych::alpha(anxiety)$total[1],
+      psych::alpha(academic)$total[1],
+      psych::alpha(sleep)$total[1],
+      psych::alpha(environment)$total[1],
+      psych::alpha(depression)$total[1],
+      psych::alpha(confidence)$total[1])
+
+
+factors2 <- rbind("anxiety","academic","sleep","environment","depression","confidence")
+
+
+# cbind(factors2, alpha = round(alphas2,2))
+
+
+alpha2 <- cbind(factors = factors2, alpha = round(alphas2,2))  
+rownames(alpha2) <- c("1","2","3","4","5","6")
+alpha2 %>% flextable()
+
+
+
+```
+
+# Recalculating Scores for the new subscales /factors in the dataset
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# add scores to the orignal dataset
+
+anxiety <- data_clean2 %>% dplyr::select(have_you_noticed_a_rapid_heartbeat_or_palpitations,
+have_you_recently_experienced_stress_in_your_life,
+have_you_been_dealing_with_anxiety_or_tension_recently) %>% rowSums(na.rm=TRUE) 
+
+academic <- data_clean2 %>% dplyr::select(academic_and_extracurricular_activities_conflicting_for_you,
+do_you_lack_confidence_in_your_choice_of_academic_subjects) %>% rowSums(na.rm=TRUE) 
+
+sleep <- data_clean2 %>% dplyr::select(have_you_been_dealing_with_anxiety_or_tension_recently_1,
+do_you_face_any_sleep_problems_or_difficulties_falling_asleep) %>% rowSums(na.rm=TRUE) 
+
+environment <- data_clean2 %>% dplyr::select(is_your_working_environment_unpleasant_or_stressful,
+are_you_facing_any_difficulties_with_your_professors_or_instructors,
+are_you_in_competition_with_your_peers_and_does_it_affect_you,
+do_you_feel_overwhelmed_with_your_academic_workload,
+do_you_often_feel_lonely_or_isolated,
+do_you_struggle_to_find_time_for_relaxation_and_leisure_activities,
+do_you_find_that_your_relationship_often_causes_you_stress) %>% rowSums(na.rm=TRUE) 
+
+depression <- data_clean2 %>% dplyr::select(do_you_have_trouble_concentrating_on_your_academic_tasks,
+have_you_been_feeling_sadness_or_low_mood,
+do_you_get_irritated_easily,
+have_you_been_getting_headaches_more_often_than_usual,
+have_you_been_experiencing_any_illness_or_health_issues) %>% rowSums(na.rm=TRUE) 
+
+confidence <- data_clean2 %>% dplyr::select(do_you_lack_confidence_in_your_academic_performance,
+is_your_hostel_or_home_environment_causing_you_difficulties) %>% rowSums(na.rm=TRUE) 
+
+
+data_clean3 <- data_clean2 %>% mutate(anxiety = anxiety,
+                                      academic = academic,
+                                      sleep = sleep,
+                                      environment = environment,
+                                      depression = depression,
+                                      confidence = confidence) 
+
+data_clean3_subset <- data_clean3 %>% select(-c(age, gender, gender_recode, age_category, which_type_of_stress_do_you_primarily_experience, stress_type, score))
+
+
+
+all_stats_df2 <- psych::alpha(data_clean3_subset)$total %>% t() %>% signif(digits=3) %>% as.data.frame()
+
+all_stats_df2 <- cbind(Variable = rownames(all_stats_df2), all_stats_df2) 
+
+
+flextable(all_stats_df2)  %>% 
+  flextable::set_table_properties(width=1,layout="autofit", 
+                                  opts_word = list(repeat_headers=TRUE,
+                                                   keep_with_next=TRUE)) %>% 
+  flextable::font(fontname="Times New Roman", part="all") %>% colformat_double(digits = 2) 
+
+
+
+all_item_stats_df2 <- psych::alpha(data_clean3_subset)$item.stats %>%  signif(digits=3) %>% as.data.frame()
+
+
+all_item_stats_df2 <- cbind(Variable = rownames(all_item_stats_df2), all_item_stats_df2) 
+
+dim(all_item_stats_df2)
+
+
+flextable(all_item_stats_df2[24:29,])  %>% 
+  flextable::set_table_properties(width=1,layout="autofit", 
+                                  opts_word = list(repeat_headers=TRUE,
+                                                   keep_with_next=TRUE)) %>% 
+  flextable::font(fontname="Times New Roman", part="all") %>% colformat_double(digits = 2) 
+```
+
+
+# Score Distribution
+
+Evalutating normality of the dataset. According to the QQ plot, the data seems normal, following the straight line through the origin, there is slight deviation on the tails. 
+
+The histogram however, shows there are some outliers. 
+
+```{r, echo=FALSE, warning=FALSE}
+hist(data_clean3$score,
+     main = "Stress Score",
+     xlab = "Stress Score",            
+     ylab = "Number of Responses",                  
+     breaks = 10,                                    
+     las = 1)        
+
+shapiro.test(data_clean3$score)
+
+
+qqPlot(data_clean3$score)
+
+
+ggplot(data_clean3) +
+  aes(x = "", y = score) +
+  geom_boxplot(fill = "steelblue") +
+  theme_minimal()
+
+
+```
+
+
+# Score Distribution - Extreme outlier removal
+
+score 115 shows an extreme outlier which was removed
+
+```{r, echo=FALSE, warning=FALSE}
+
+data_clean3 %>% identify_outliers(score) %>% select(score, is.outlier, is.extreme) %>% flextable()
+
+# test by removing extremes 
+
+data_clean4 <- data_clean3 %>% filter(score != c(115))
+
+hist(data_clean4$score,
+     main = "Stress Score",
+     xlab = "Stress Score",            
+     ylab = "Number of Responses",                  
+     breaks = 10,                                    
+     las = 1)        
+
+shapiro.test(data_clean4$score)
+
+
+qqPlot(data_clean4$score)
+
+
+
+
+```
+
+# Linear Regression - Satisfaction Score
+
+```{r, echo=FALSE, warning=FALSE}
+data_subset <- data_clean4 %>% select(age, gender_recode, stress_type,
+                              anxiety, academic, sleep, environment, depression, confidence, score) %>%
+  mutate(age_cleaned = scale(age, center = TRUE, scale = FALSE)) %>%
+  select(-age)
+
+
+model <- lm(score ~ ., data = data_subset)
+
+report(model)
+
+```
+
+
+
+# Assumptions
+
+```{r, echo=FALSE, warning=FALSE}
+
+autoplot(model)
+
+```
+
+# Reporting Beta table
+
+```{r, echo=FALSE, warning=TRUE}
+
+tbl_regression(model,pvalue_fun = label_style_pvalue(digits = 3),
+                            estimate_fun = label_style_number(digits=3)) %>%
+                            bold_p() %>%
+  as_flex_table() %>%
+   flextable::set_table_properties(width=1,layout="autofit",
+                       opts_word = list(repeat_headers=TRUE,
+                                        keep_with_next=TRUE)) %>%
+  flextable::font(fontname="Times New Roman", part="all") %>%
+  flextable::line_spacing(space=1, part="all")
+```
+
+# Reporting ANOVA Table
+
+```{r, echo=FALSE, warning=TRUE}
+
+
+anova_results <- car::Anova(model, type="II" )
+
+
+ anova_results %>%
+   tidy() %>%
+   flextable() %>%
+   colformat_double(j = c("sumsq","statistic", "p.value"), digits = 3) %>%
+   set_header_labels(
+     term = "Variable",
+     sumsq = "Sum of Squares",
+     df = "df",
+     statistic = "F statistic",
+     p.value = "p-value"
+   ) %>%
+   bold(i = ~ p.value < 0.05, j = "p.value") %>%
+   flextable::set_table_properties(width = 1,
+                        layout = "autofit",
+                        opts_word = list(repeat_headers = TRUE, keep_with_next = TRUE)) %>%
+  flextable::font(fontname = "Times New Roman", part = "all") %>%
+   flextable::line_spacing(space = 1, part = "all")
+
+
+ report(anova_results)
+```
+
+
+
+
+# R package References 
+
+```{r, echo=FALSE, warning=FALSE}
+report(sessionInfo())
+
+```
+
+# References
+
+1.	Stress and Well-being Data of College Students [Internet]. [cited 2026 Oct 3]. Available from: https://www.kaggle.com/datasets/ashutoshsingh22102/stress-and-well-being-data-of-college-students
+2.	Machine Learning Algorithms for Detecting Mental Stress in College Students | IEEE Conference Publication | IEEE Xplore [Internet]. [cited 2026 Oct 3]. Available from: https://ieeexplore.ieee.org/abstract/document/10544243
+3.	Optimizing Well-Being: Unveiling Eustress and Distress through Machine Learning | IEEE Conference Publication | IEEE Xplore [Internet]. [cited 2026 Oct 3]. Available from: https://ieeexplore.ieee.org/abstract/document/10544592
+4.	Ovi MSI, Hossain J, Rahi MRA, Akter F. Protecting Student Mental Health with a Context-Aware Machine Learning Framework for Stress Monitoring [Internet]. arXiv; 2025 [cited 2026 Oct 3]. Available from: http://arxiv.org/abs/2508.01105 doi:10.48550/arXiv.2508.01105
+5.	Student Stress Monitoring Datasets [Internet]. [cited 2026 Oct 3]. Available from: https://www.kaggle.com/datasets/mdsultanulislamovi/student-stress-monitoring-datasets
+6.	Brown S. Likert Scale Examples for Surveys.
+7.	8  Cleaning data and core functions – The Epidemiologist R Handbook [Internet]. [cited 2026 Oct 3]. Available from: https://www.epirhandbook.com/en/new_pages/cleaning.html#column-names
+8.	RPubs - A Primer on Factor Analysis in Resear using Reproducible R Software [Internet]. [cited 2026 Oct 3]. Available from: https://rpubs.com/Geesaale/1064415
+9.	EBSCO [Internet]. [cited 2026 Oct 3]. Cronbach’s alpha | Science | Research Starters | EBSCOhost. Available from: https://www.ebsco.com/
+10.	17  Descriptive tables – The Epidemiologist R Handbook [Internet]. [cited 2026 Oct 3]. Available from: https://www.epirhandbook.com/en/new_pages/tables_descriptive.html#dplyr-package
+11.	Stats and R [Internet]. [cited 2026 Oct 3]. ANOVA in R. Available from: https://statsandr.com/blog/anova-in-r/
+12.	Comparison tests/methods available — tests [Internet]. [cited 2026 Oct 3]. Available from: https://www.danieldsjoberg.com/gtsummary/reference/tests.html
+13.	neversaint. How to change legend title in ggplot [Forum post]. Stack Overflow [Internet]. 2022 [cited 2026 Oct 3]. Available from: https://stackoverflow.com/q/14622421
+14.	MASH. Guides: MASH : Maths and Stats Help: Cronbach’s Alpha (R) [Internet]. [cited 2026 Oct 3]. Available from: https://guides.library.lincoln.ac.uk/mash/cronbachs_alpha_R
+
+
